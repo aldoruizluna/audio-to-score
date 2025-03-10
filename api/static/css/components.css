@@ -1,0 +1,19 @@
+/**
+ * Components CSS Imports
+ * This file imports all modular component stylesheets
+ */
+
+/* Import modular component styles */
+@import 'components/buttons.css';
+@import 'components/dropzone.css';
+@import 'components/file-selection.css';
+@import 'components/tabs.css';
+
+/* Any global component utilities or shared styles can go here */
+.hidden {
+    display: none !important;
+}
+
+/* NOTE: All component-specific styles have been moved to their respective files
+ * in the components/ directory to maintain better organization and modularity
+ */

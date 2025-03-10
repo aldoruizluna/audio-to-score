@@ -1,0 +1,61 @@
+/**
+ * Button Components
+ * Contains all button-related styling for the application
+ */
+
+.btn {
+    display: inline-block;
+    background-color: #f5f7fa;
+    color: #7f8c8d;
+    border: 1px solid var(--border-color);
+    padding: 12px 24px;
+    cursor: pointer;
+    font-weight: 500;
+    border-radius: var(--border-radius);
+    transition: all 0.3s ease;
+    font-size: 15px;
+    outline: none;
+    text-align: center;
+    margin: 5px;
+    box-shadow: var(--shadow-sm);
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.primary-btn {
+    background: linear-gradient(to right, var(--primary-color), var(--primary-dark));
+    color: white;
+    border: none;
+    padding: 14px 28px;
+    font-weight: 500;
+    box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);
+}
+
+.primary-btn:hover {
+    background: linear-gradient(to right, var(--primary-dark), var(--primary-color));
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(52, 152, 219, 0.4);
+}
+
+.error-btn {
+    background: linear-gradient(to right, var(--error-color), var(--error-dark));
+    color: white;
+    border: none;
+}
+
+.error-btn:hover {
+    background: linear-gradient(to right, var(--error-dark), var(--error-color));
+}
+
+.disabled-btn {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.disabled-btn:hover {
+    transform: none;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}

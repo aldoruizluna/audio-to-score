@@ -1,0 +1,125 @@
+/* Base Styles */
+:root {
+    --primary-color: #3498db;
+    --primary-dark: #2980b9;
+    --secondary-color: #2ecc71;
+    --secondary-dark: #27ae60;
+    --text-color: #34495e;
+    --light-text: #7f8c8d;
+    --light-bg: #f5f7fa;
+    --border-color: #e1e5ee;
+    --error-color: #e74c3c;
+    --warning-color: #f39c12;
+    --success-color: #4CAF50;
+    --success-light: rgba(76, 175, 80, 0.1);
+    --success-border: rgba(76, 175, 80, 0.2);
+    --container-width: 1200px;
+    --border-radius: 8px;
+    --shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Roboto', sans-serif;
+}
+
+body {
+    background-color: var(--light-bg);
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+img, svg {
+    max-width: 100%;
+}
+
+.container {
+    max-width: var(--container-width);
+    margin: 0 auto;
+    padding: 30px;
+}
+
+/* Header Styles */
+header {
+    text-align: center;
+    margin-bottom: 40px;
+    padding: 30px 0;
+}
+
+header h1 {
+    font-size: 2.8rem;
+    margin-bottom: 10px;
+    color: var(--text-color);
+    font-weight: 700;
+    background: linear-gradient(to right, var(--text-color), var(--primary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: pulse 2s infinite;
+}
+
+header p {
+    font-size: 1.2rem;
+    color: var(--light-text);
+    font-weight: 300;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+main {
+    background-color: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    padding: 40px;
+}
+
+/* Utility Classes */
+.hidden {
+    display: none !important;
+}
+
+/* Footer Section */
+footer {
+    text-align: center;
+    padding: 30px 0;
+    color: var(--light-text);
+    font-size: 14px;
+    margin-top: 40px;
+    background: linear-gradient(to bottom, transparent, rgba(52, 152, 219, 0.05));
+    border-top: 1px solid rgba(52, 152, 219, 0.1);
+    position: relative;
+}
+
+footer:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 35%;
+    right: 35%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(52, 152, 219, 0.3), transparent);
+    border-radius: 0 0 3px 3px;
+}
+
+footer p {
+    font-weight: 300;
+    letter-spacing: 0.5px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.8; }
+    100% { opacity: 1; }
+}
+
+@keyframes shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}

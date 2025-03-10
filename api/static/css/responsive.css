@@ -1,0 +1,80 @@
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .container {
+        max-width: 95%;
+    }
+    
+    main {
+        padding: 30px;
+    }
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 15px;
+        max-width: 100%;
+    }
+    
+    header {
+        margin-bottom: 25px;
+        padding: 20px 0;
+    }
+    
+    header h1 {
+        font-size: 2.2rem;
+    }
+    
+    header p {
+        font-size: 1rem;
+    }
+    
+    main {
+        padding: 20px;
+        border-radius: 8px;
+    }
+    
+    .tabs {
+        flex-wrap: wrap;
+    }
+    
+    .tab-btn {
+        padding: 10px 15px;
+        font-size: 14px;
+    }
+    
+    .drop-zone {
+        padding: 30px 20px;
+    }
+    
+    .btn {
+        padding: 10px 16px;
+        font-size: 14px;
+    }
+    
+    .primary-btn {
+        padding: 12px 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    header h1 {
+        font-size: 1.8rem;
+    }
+    
+    .drop-zone {
+        padding: 20px 15px;
+    }
+    
+    .options-panel {
+        padding: 15px;
+    }
+    
+    .results-container {
+        padding: 20px;
+    }
+    
+    .tab-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+}
