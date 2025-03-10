@@ -1,0 +1,51 @@
+# API and Web Framework
+fastapi>=0.95.0
+uvicorn>=0.21.1
+python-multipart>=0.0.6
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# Audio Processing
+librosa>=0.10.0
+numpy>=1.22.0
+scipy>=1.10.0
+ffmpeg-python>=0.2.0
+
+# Pitch Detection and Transcription
+crepe>=0.0.14
+whisper>=1.1.10
+
+# Stem Separation (Optional)
+spleeter>=2.4.0
+
+# Score Generation and Visualization
+music21>=8.1.0
+
+# Output Formatting
+reportlab>=3.6.12
+lxml>=4.9.2
+
+# Data Storage
+pymongoarrow>=1.1.0
+motor>=3.1.1
+pymongo>=4.3.3
+
+# Messaging and Task Queue
+celery>=5.2.7
+redis>=4.5.4
+
+# Testing and Development
+pytest>=7.3.1
+mypy>=1.2.0
+black>=23.3.0
+flake8>=6.0.0
+
+# Monitoring and Logging
+elasticsearch>=8.7.0
+python-json-logger>=2.0.7
+parsing>=1.6.1
+
+# Security
+python-jose>=3.3.0
+passlib>=1.7.4
+bcrypt>=4.0.1

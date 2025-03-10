@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  api_gateway:
+    build:
+      context: .
+      dockerfile: docker/api_gateway.Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - REDIS_URI=redis://redis:6379/0
+      - UPLOAD_FOLDER=/app/uploads
+    depends_on:
+      - mongodb
+      - redis
+
+  audio_preprocessing:
+    build:
+      context: .
+      dockerfile: docker/audio_preprocessing.Dockerfile
+    volumes:
+      - ./:/app
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - REDIS_URI=redis://redis:6379/0
+      - UPLOAD_FOLDER=/app/uploads
+    depends_on:
+      - mongodb
+      - redis
+
+  stem_separation:
+    build:
+      context: .
+      dockerfile: docker/stem_separation.Dockerfile
+    volumes:
+      - ./:/app
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - REDIS_URI=redis://redis:6379/0
+      - UPLOAD_FOLDER=/app/uploads
+    depends_on:
+      - mongodb
+      - redis
+
+  feature_extraction:
+    build:
+      context: .
+      dockerfile: docker/feature_extraction.Dockerfile
+    volumes:
+      - ./:/app
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - REDIS_URI=redis://redis:6379/0
+    depends_on:
+      - mongodb
+      - redis
+
+  note_mapping:
+    build:
+      context: .
+      dockerfile: docker/note_mapping.Dockerfile
+    volumes:
+      - ./:/app
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - REDIS_URI=redis://redis:6379/0
+    depends_on:
+      - mongodb
+      - redis
+
+  output_formatting:
+    build:
+      context: .
+      dockerfile: docker/output_formatting.Dockerfile
+    volumes:
+      - ./:/app
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - REDIS_URI=redis://redis:6379/0
+    depends_on:
+      - mongodb
+      - redis
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:

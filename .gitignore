@@ -1,0 +1,14 @@
+# Virtual environment
+venv/
+
+# System files
+.DS_Store
+
+# Large files
+audio-to-score.bundle
+api/uploads/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio-to-Score JS Tests</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #f5f8fa;
+        }
+        .test-container {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        h2 {
+            color: #3498db;
+            margin: 20px 0 10px;
+        }
+        .test-info {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .test-button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+            transition: background-color 0.3s;
+        }
+        .test-button:hover {
+            background-color: #2980b9;
+        }
+        .test-output {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 6px;
+            min-height: 200px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .shortcuts {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f1f8e9;
+            border-radius: 6px;
+        }
+        kbd {
+            background-color: #eee;
+            border-radius: 3px;
+            border: 1px solid #b4b4b4;
+            box-shadow: 0 1px 1px rgba(0, 0, 0, .2);
+            color: #333;
+            display: inline-block;
+            font-size: 0.85em;
+            font-weight: 700;
+            line-height: 1;
+            padding: 2px 4px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Audio-to-Score JavaScript Module Tests</h1>
+        <div class="test-info">
+            <p>This page runs tests on the refactored JavaScript modules to verify they're working correctly.</p>
+            <p>Testing ensures our modular structure maintains all functionality of the original implementation.</p>
+        </div>
+
+        <div class="shortcuts">
+            <h3>Testing Options:</h3>
+            <p><strong>Run All Tests:</strong> <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd></p>
+            <p><strong>Run Individual Module Tests:</strong> Use the buttons below</p>
+        </div>
+
+        <h2>Test Runner</h2>
+        <button id="run-all-tests" class="test-button">Run All Tests</button>
+        <button id="test-ui-controller" class="test-button">Test UI Controller</button>
+        <button id="test-audio-processor" class="test-button">Test Audio Processor</button>
+        <button id="test-history-manager" class="test-button">Test History Manager</button>
+        <button id="test-result-renderer" class="test-button">Test Result Renderer</button>
+
+        <h2>Test Results</h2>
+        <div id="test-output" class="test-output">Test results will appear here...</div>
+    </div>
+
+    <!-- Load JS modules in the correct order -->
+    <script src="js/audioProcessor.js"></script>
+    <script src="js/uiController.js"></script>
+    <script src="js/resultRenderer.js"></script>
+    <script src="js/historyManager.js"></script>
+    <script src="js/tests.js"></script>
+
+    <!-- Test page specific script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const testOutput = document.getElementById('test-output');
+            
+            // Override console.log to also write to our test output div
+            const originalConsoleLog = console.log;
+            const originalConsoleError = console.error;
+            const originalConsoleInfo = console.info;
+            
+            console.log = function(...args) {
+                // Call original console.log
+                originalConsoleLog.apply(console, args);
+                // Add to test output
+                testOutput.innerHTML += args.join(' ') + '\n';
+            };
+            
+            console.error = function(...args) {
+                // Call original console.error
+                originalConsoleError.apply(console, args);
+                // Add to test output with red styling
+                testOutput.innerHTML += `<span style="color: red;">${args.join(' ')}</span>\n`;
+            };
+            
+            console.info = function(...args) {
+                // Call original console.info
+                originalConsoleInfo.apply(console, args);
+                // Add to test output with blue styling
+                testOutput.innerHTML += `<span style="color: blue;">${args.join(' ')}</span>\n`;
+            };
+            
+            // Set up button event listeners
+            document.getElementById('run-all-tests').addEventListener('click', () => {
+                testOutput.innerHTML = ''; // Clear previous results
+                console.log('🧪 Running all tests...');
+                TestRunner.runAllTests();
+            });
+            
+            // Individual module test buttons
+            const moduleTestButtons = {
+                'test-ui-controller': () => {
+                    testOutput.innerHTML = ''; // Clear previous results
+                    console.log('🧪 Testing UI Controller module...');
+                    TestRunner.testUIController();
+                },
+                'test-audio-processor': () => {
+                    testOutput.innerHTML = ''; // Clear previous results
+                    console.log('🧪 Testing Audio Processor module...');
+                    TestRunner.testAudioProcessor();
+                },
+                'test-history-manager': () => {
+                    testOutput.innerHTML = ''; // Clear previous results
+                    console.log('🧪 Testing History Manager module...');
+                    TestRunner.testHistoryManager();
+                },
+                'test-result-renderer': () => {
+                    testOutput.innerHTML = ''; // Clear previous results
+                    console.log('🧪 Testing Result Renderer module...');
+                    TestRunner.testResultRenderer();
+                }
+            };
+            
+            // Add event listeners for individual module test buttons
+            Object.keys(moduleTestButtons).forEach(id => {
+                document.getElementById(id).addEventListener('click', moduleTestButtons[id]);
+            });
+            
+            // Set up keyboard shortcut
+            document.addEventListener('keydown', (event) => {
+                if (event.ctrlKey && event.shiftKey && event.key === 'T') {
+                    event.preventDefault();
+                    testOutput.innerHTML = ''; // Clear previous results
+                    console.log('🧪 Running all tests via keyboard shortcut...');
+                    TestRunner.runAllTests();
+                }
+            });
+            
+            // Add welcome message
+            console.info('✨ Test page loaded. Run tests using buttons above or keyboard shortcuts.');
+            console.info('📋 This test runner validates the JavaScript module refactoring.');
+        });
+    </script>
+</body>
+</html>
