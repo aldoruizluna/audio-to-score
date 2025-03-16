@@ -68,7 +68,7 @@ if USE_DATABASE:
         
         print("Connected to MongoDB successfully")
     except Exception as e:
-        print(f"MongoDB connection error: {e}")
+        print("MongoDB connection error: {}".format(e))
         print("Continuing with in-memory storage only")
         USE_DATABASE = False
 else:
