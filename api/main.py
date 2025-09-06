@@ -19,9 +19,9 @@ from bson import ObjectId
 import motor.motor_asyncio
 import json
 
-from config import settings
-from models import JobStatus, JobResponse, InstrumentInfo
-from auth import get_current_user
+from api.config import settings
+from api.models import JobStatus, JobResponse, InstrumentInfo
+from api.auth import get_current_user
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -29,6 +29,14 @@ app = FastAPI(
     description="API for converting audio recordings to tablature and musical score formats",
     version="1.0.0"
 )
+
+# Development mode flag - set to True to run without MongoDB and Redis
+DEV_MODE = True
+
+# In-memory storage for development mode
+if DEV_MODE:
+    print("Running in DEVELOPMENT MODE - using in-memory storage instead of MongoDB and Redis")
+    in_memory_jobs = {}
 
 # Add CORS middleware
 app.add_middleware(
@@ -48,34 +56,67 @@ os.makedirs(os.path.join(os.path.dirname(__file__), "static"), exist_ok=True)
 # Mount the static directory
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 
-# Database setup - using in-memory storage for MVP testing
-# Flag to control whether to attempt database connections
-USE_DATABASE = False  # Set to False for pure in-memory operation
+# Database setup - default to persistent storage
+# USE_DATABASE is the opposite of DEV_MODE
+USE_DATABASE = not DEV_MODE  # Database disabled in development mode
 
-# In-memory job storage
+# In-memory job storage as fallback
 jobs = {}
 
-# Skip database connection in MVP mode
-if USE_DATABASE:
-    try:
-        # MongoDB setup
-        mongo_client = MongoClient(settings.MONGODB_URI)
-        db = mongo_client[settings.DATABASE_NAME]
+# Redis for messaging
+REDIS_ENABLED = True
+
+# Setup database connections
+try:
+    # MongoDB setup
+    mongo_client = MongoClient(settings.MONGODB_URI)
+    db = mongo_client[settings.DATABASE_NAME]
+    
+    # Motor setup for async operations
+    motor_client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGODB_URI)
+    motor_db = motor_client[settings.DATABASE_NAME]
+    
+    # Ensure indexes for performance
+    motor_db.jobs.create_index("job_id")
+    motor_db.jobs.create_index("status")
+    motor_db.jobs.create_index("created_at")
+    
+    print("Connected to MongoDB successfully")
+except Exception as e:
+    print(f"MongoDB connection error: {e}")
+    print("Falling back to in-memory storage")
+    USE_DATABASE = False
+
+# Setup Redis for task queue
+try:
+    if REDIS_ENABLED:
+        import redis
+        from celery import Celery
         
-        # Motor setup for async operations
-        motor_client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGODB_URI)
-        motor_db = motor_client[settings.DATABASE_NAME]
+        # Redis connection
+        redis_client = redis.Redis.from_url(settings.REDIS_URI)
         
-        print("Connected to MongoDB successfully")
-    except Exception as e:
-        print(f"MongoDB connection error: {e}")
-        print("Continuing with in-memory storage only")
-        USE_DATABASE = False
-else:
-    print("Running in memory-only mode (no database connection)")
-# We're using the USE_DATABASE flag above to control database connectivity
-# No need for redundant variables
-print("Using in-memory storage for MVP testing")
+        # Celery setup for task queue
+        celery_app = Celery('audio_to_score',
+                           broker=settings.REDIS_URI,
+                           backend=settings.REDIS_URI)
+        
+        # Configure Celery
+        celery_app.conf.task_routes = {
+            'modules.audio_preprocessing.tasks.*': {'queue': 'preprocessing'},
+            'modules.stem_separation.tasks.*': {'queue': 'stem_separation'},
+            'modules.feature_extraction.tasks.*': {'queue': 'feature_extraction'},
+            'modules.note_mapping.tasks.*': {'queue': 'note_mapping'},
+            'modules.output_formatting.tasks.*': {'queue': 'output_formatting'}
+        }
+        
+        print("Connected to Redis successfully")
+    else:
+        print("Redis disabled, running in local processing mode")
+except Exception as e:
+    print(f"Redis/Celery setup error: {e}")
+    print("Running in local processing mode")
+    REDIS_ENABLED = False
 
 # API routes
 @app.post("/upload", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -127,10 +168,12 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
     }
     
     # Store job info either in MongoDB or in-memory
-    if USE_DATABASE:
-        await motor_db.jobs.insert_one(job)
+    if DEV_MODE:
+        # Use in-memory storage in development mode
+        in_memory_jobs[job_id] = job
     else:
-        jobs[job_id] = job
+        # Use MongoDB in production mode
+        await motor_db.jobs.insert_one(job)
     
     # Start processing pipeline asynchronously
     background_tasks.add_task(start_processing_pipeline, job_id)
@@ -138,42 +181,77 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
     return JobResponse(job_id=job_id, status=JobStatus.PENDING.value)
 
 async def start_processing_pipeline(job_id: str):
-    """Process the audio file using librosa and create tab notation.
+    """Process the audio file through the complete transcription pipeline.
     
     Args:
         job_id: The ID of the job to process
     """
     # Update job status to PROCESSING
-    if USE_DATABASE:
+    if DEV_MODE:
+        if job_id in in_memory_jobs:
+            in_memory_jobs[job_id]["status"] = JobStatus.PROCESSING.value
+            in_memory_jobs[job_id]["updated_at"] = datetime.utcnow()
+    else:
         await motor_db.jobs.update_one(
             {"job_id": job_id},
             {"$set": {"status": JobStatus.PROCESSING.value, "updated_at": datetime.utcnow()}}
         )
-    else:
-        if job_id in jobs:
-            jobs[job_id]["status"] = JobStatus.PROCESSING.value
-            jobs[job_id]["updated_at"] = datetime.utcnow()
     
     try:
         # Get the job information to access the file path
-        if USE_DATABASE:
-            job = await motor_db.jobs.find_one({"job_id": job_id})
+        if DEV_MODE:
+            job = in_memory_jobs.get(job_id)
         else:
-            job = jobs.get(job_id)
+            job = await motor_db.jobs.find_one({"job_id": job_id})
         
         if not job:
             print(f"Job {job_id} not found")
             return
         
         file_path = job["file_path"]
-        print(f"Processing file: {file_path}")
+        print(f"Starting processing pipeline for job {job_id}, file: {file_path}")
+        
+        # If we're using Celery/Redis, send to distributed pipeline
+        if REDIS_ENABLED:
+            try:
+                # Import Celery tasks from each module
+                from modules.audio_preprocessing.tasks import preprocess_audio
+                from modules.stem_separation.tasks import separate_stems
+                from modules.feature_extraction.tasks import extract_features
+                from modules.note_mapping.tasks import map_notes
+                from modules.output_formatting.tasks import format_output
+                
+                # Get instrument type from job metadata or default to "bass"
+                instrument_type = job.get("instrument_type", "bass")
+                
+                # Start the task chain - each task will pass its result to the next
+                result = celery_app.chain(
+                    preprocess_audio.s(job_id, file_path),
+                    separate_stems.s(job_id),
+                    extract_features.s(job_id),
+                    map_notes.s(job_id, instrument_type),
+                    format_output.s(job_id)
+                ).apply_async()
+                
+                print(f"Started distributed processing pipeline for job {job_id}")
+                return
+            except Exception as e:
+                print(f"Error starting distributed pipeline: {e}")
+                print("Falling back to local processing")
+        
+        # Local processing fallback for testing or when Redis is unavailable
+        print(f"Starting local processing for job {job_id}")
         
         # Import necessary libraries for audio processing
         import librosa
         import numpy as np
         
-        # Load the audio file with librosa
-        y, sr = librosa.load(file_path, mono=True)
+        # Local processing implementation
+        # 1. Audio Preprocessing
+        processed_file = file_path
+        
+        # 2. Load the audio file with librosa
+        y, sr = librosa.load(processed_file, mono=True)
         
         # Bass guitar standard tuning (E A D G, from lowest to highest)
         bass_strings = {
@@ -183,11 +261,11 @@ async def start_processing_pipeline(job_id: str):
             "G": 98.00   # G2 (MIDI note 43)
         }
         
-        # Extract onset times using librosa onset detection
+        # 3. Extract onset times using librosa onset detection
         onset_frames = librosa.onset.onset_detect(y=y, sr=sr, 
-                                           units='frames', 
-                                           hop_length=512,
-                                           backtrack=True)
+                                        units='frames', 
+                                        hop_length=512,
+                                        backtrack=True)
         onset_times = librosa.frames_to_time(onset_frames, sr=sr)
         
         # Limit the number of onsets to analyze (for speed in MVP)
@@ -301,7 +379,12 @@ async def start_processing_pipeline(job_id: str):
         }
         
         # Update job with transcription result
-        if USE_DATABASE:
+        if DEV_MODE:
+            if job_id in in_memory_jobs:
+                in_memory_jobs[job_id]["status"] = JobStatus.COMPLETED.value
+                in_memory_jobs[job_id]["updated_at"] = datetime.utcnow()
+                in_memory_jobs[job_id]["result"] = result
+        else:
             await motor_db.jobs.update_one(
                 {"job_id": job_id},
                 {"$set": {
@@ -310,11 +393,6 @@ async def start_processing_pipeline(job_id: str):
                     "result": result
                 }}
             )
-        else:
-            if job_id in jobs:
-                jobs[job_id]["status"] = JobStatus.COMPLETED.value
-                jobs[job_id]["updated_at"] = datetime.utcnow()
-                jobs[job_id]["result"] = result
                 
     except Exception as e:
         # Log the error and update job status
@@ -323,7 +401,12 @@ async def start_processing_pipeline(job_id: str):
         import traceback
         traceback.print_exc()
         
-        if USE_DATABASE:
+        if DEV_MODE:
+            if job_id in in_memory_jobs:
+                in_memory_jobs[job_id]["status"] = JobStatus.ERROR.value
+                in_memory_jobs[job_id]["updated_at"] = datetime.utcnow()
+                in_memory_jobs[job_id]["error_log"] = error_message
+        else:
             await motor_db.jobs.update_one(
                 {"job_id": job_id},
                 {"$set": {
@@ -332,11 +415,6 @@ async def start_processing_pipeline(job_id: str):
                     "error_log": error_message
                 }}
             )
-        else:
-            if job_id in jobs:
-                jobs[job_id]["status"] = JobStatus.ERROR.value
-                jobs[job_id]["updated_at"] = datetime.utcnow()
-                jobs[job_id]["error_log"] = error_message
 
 @app.get("/status/{job_id}", response_model=JobResponse)
 async def get_job_status(job_id: str):
@@ -348,10 +426,10 @@ async def get_job_status(job_id: str):
     Returns:
         JobResponse: Current job status
     """
-    if USE_DATABASE:
-        job = await motor_db.jobs.find_one({"job_id": job_id})
+    if DEV_MODE:
+        job = in_memory_jobs.get(job_id)
     else:
-        job = jobs.get(job_id)
+        job = await motor_db.jobs.find_one({"job_id": job_id})
     
     if not job:
         raise HTTPException(
@@ -376,10 +454,10 @@ async def get_job_result(job_id: str, format: str = "json"):
     Returns:
         The transcription result in the requested format
     """
-    if USE_DATABASE:
-        job = await motor_db.jobs.find_one({"job_id": job_id})
+    if DEV_MODE:
+        job = in_memory_jobs.get(job_id)
     else:
-        job = jobs.get(job_id)
+        job = await motor_db.jobs.find_one({"job_id": job_id})
     
     if not job:
         raise HTTPException(
@@ -402,9 +480,9 @@ async def get_job_result(job_id: str, format: str = "json"):
                 }}
             )
         else:
-            jobs[job_id]["status"] = JobStatus.ERROR.value
-            jobs[job_id]["error_log"] = error_message
-            jobs[job_id]["updated_at"] = datetime.utcnow()
+            in_memory_jobs[job_id]["status"] = JobStatus.ERROR.value
+            in_memory_jobs[job_id]["error_log"] = error_message
+            in_memory_jobs[job_id]["updated_at"] = datetime.utcnow()
         
         raise HTTPException(
             status_code=404,
@@ -500,4 +578,4 @@ async def debug_status():
     }
 
 if __name__ == "__main__":
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8008, reload=True)

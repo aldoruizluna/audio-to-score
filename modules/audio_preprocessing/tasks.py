@@ -28,12 +28,16 @@ mongo_client = MongoClient(settings.MONGODB_URI)
 db = mongo_client[settings.DATABASE_NAME]
 
 
-@celery_app.task(name='audio_preprocessing.process_audio')
-def process_audio(job_id: str):
+@celery_app.task(name='modules.audio_preprocessing.tasks.preprocess_audio', bind=True)
+def preprocess_audio(self, job_id: str, file_path: str):
     """Process an audio file, normalizing and converting it as needed.
     
     Args:
         job_id: The ID of the job to process
+        file_path: Path to the audio file
+        
+    Returns:
+        Dictionary with preprocessing results to pass to the next task
     """
     logger.info(f"Starting audio preprocessing for job {job_id}")
     
@@ -42,50 +46,47 @@ def process_audio(job_id: str):
         job = db.jobs.find_one({"job_id": job_id})
         if not job:
             logger.error(f"Job {job_id} not found")
-            return False
+            raise ValueError(f"Job {job_id} not found")
         
-        # Update job status
+        # Update job status with step info
         db.jobs.update_one(
             {"job_id": job_id},
             {"$set": {
                 "status": JobStatus.PROCESSING.value,
+                "current_step": "audio_preprocessing",
                 "updated_at": datetime.utcnow()
             }}
         )
         
         # Create preprocessing output directory
-        input_file = job.get("file_path")
         job_dir = os.path.join(settings.UPLOAD_FOLDER, job_id)
         os.makedirs(job_dir, exist_ok=True)
         
         # Initialize processor and process audio
         processor = AudioPreprocessor()
-        processing_results = processor.process_audio(input_file, job_dir)
+        processing_results = processor.process_audio(file_path, job_dir)
         
         # Update job with processing results
         db.jobs.update_one(
             {"job_id": job_id},
             {"$set": {
                 "preprocessing_results": processing_results,
-                "updated_at": datetime.utcnow()
+                "updated_at": datetime.utcnow(),
+                "progress": 20  # 20% of the process complete
             }}
         )
         
-        # Trigger next step in pipeline (stem separation or feature extraction)
-        # In a real implementation, check if stem separation is requested
-        use_stem_separation = job.get("use_stem_separation", False)
-        
-        if use_stem_separation:
-            # Trigger stem separation
-            from ..stem_separation.tasks import separate_stems
-            separate_stems.delay(job_id)
-        else:
-            # Skip to feature extraction
-            from ..feature_extraction.tasks import extract_features
-            extract_features.delay(job_id)
-        
         logger.info(f"Audio preprocessing completed for job {job_id}")
-        return True
+        
+        # Return processed file path and metadata for the next task in the chain
+        return {
+            "job_id": job_id,
+            "processed_file": processing_results["processed_path"],
+            "original_file": file_path,
+            "sample_rate": processing_results["sample_rate"],
+            "duration": processing_results["duration"],
+            "spectrogram_path": processing_results["spectrogram_path"]
+        }
         
     except Exception as e:
         logger.error(f"Error processing audio for job {job_id}: {e}")
@@ -96,8 +97,10 @@ def process_audio(job_id: str):
             {"$set": {
                 "status": JobStatus.ERROR.value,
                 "error_log": str(e),
+                "error_stage": "audio_preprocessing",
                 "updated_at": datetime.utcnow()
             }}
         )
         
-        return False
+        # Re-raise the exception to break the Celery chain
+        raise

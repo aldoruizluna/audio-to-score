@@ -24,6 +24,312 @@ class OutputFormatter:
     def __init__(self):
         """Initialize the output formatter."""
         self.styles = getSampleStyleSheet()
+        
+    def create_musicxml(self, notes: List[Dict[str, Any]], output_path: str, tempo: float = 120.0, 
+                       key: str = 'C', instrument_type: str = 'bass') -> Dict[str, Any]:
+        """Generate a MusicXML file from note data.
+        
+        Args:
+            notes: List of note dictionaries with musical information
+            output_path: Path to save the MusicXML output
+            tempo: Tempo in BPM
+            key: Musical key of the piece
+            instrument_type: Type of instrument
+            
+        Returns:
+            Dictionary with operation results
+        """
+        logger.info(f"Generating MusicXML file at {output_path}")
+        
+        try:
+            # Create basic XML structure
+            score_partwise = ET.Element("score-partwise", version="3.1")
+            
+            # Add part list
+            part_list = ET.SubElement(score_partwise, "part-list")
+            score_part = ET.SubElement(part_list, "score-part", id="P1")
+            part_name = ET.SubElement(score_part, "part-name")
+            part_name.text = instrument_type.capitalize()
+            
+            # Create part
+            part = ET.SubElement(score_partwise, "part", id="P1")
+            
+            # Add measure with time and key signatures
+            measure = ET.SubElement(part, "measure", number="1")
+            
+            # Add attributes
+            attributes = ET.SubElement(measure, "attributes")
+            
+            # Divisions (resolution)
+            divisions = ET.SubElement(attributes, "divisions")
+            divisions.text = "24"  # 24 divisions per quarter note
+            
+            # Key signature
+            key_elem = ET.SubElement(attributes, "key")
+            fifths = ET.SubElement(key_elem, "fifths")
+            fifths.text = "0"  # Default to C major/A minor
+            
+            # Time signature (4/4 by default)
+            time = ET.SubElement(attributes, "time")
+            beats = ET.SubElement(time, "beats")
+            beats.text = "4"
+            beat_type = ET.SubElement(time, "beat-type")
+            beat_type.text = "4"
+            
+            # Add notes to the measure
+            current_position = 0
+            for note_data in notes:
+                note_duration = note_data.get("quarter_length", 1.0) * 24  # Convert to divisions
+                
+                # Create note element
+                note_elem = ET.SubElement(measure, "note")
+                
+                # Add pitch information
+                pitch_elem = ET.SubElement(note_elem, "pitch")
+                note_name = note_data.get("note", "C4")
+                
+                # Extract step and octave
+                step = note_name[0]
+                if len(note_name) > 1 and note_name[1] in ["#", "b"]:
+                    alter_val = 1 if note_name[1] == "#" else -1
+                    octave = note_name[2:] if len(note_name) > 2 else "4"
+                    
+                    # Add alter element for sharps/flats
+                    step_elem = ET.SubElement(pitch_elem, "step")
+                    step_elem.text = step
+                    
+                    alter = ET.SubElement(pitch_elem, "alter")
+                    alter.text = str(alter_val)
+                else:
+                    octave = note_name[1:] if len(note_name) > 1 else "4"
+                    step_elem = ET.SubElement(pitch_elem, "step")
+                    step_elem.text = step
+                
+                octave_elem = ET.SubElement(pitch_elem, "octave")
+                octave_elem.text = octave
+                
+                # Add duration
+                duration_elem = ET.SubElement(note_elem, "duration")
+                duration_elem.text = str(int(round(note_duration)))
+                
+                # Add type (whole, half, quarter, etc.)
+                # Simple mapping based on duration
+                if note_duration >= 96:  # 4 quarters = whole note
+                    note_type = "whole"
+                elif note_duration >= 48:  # 2 quarters = half note
+                    note_type = "half"
+                elif note_duration >= 24:  # 1 quarter
+                    note_type = "quarter"
+                elif note_duration >= 12:  # 1/8th note
+                    note_type = "eighth"
+                elif note_duration >= 6:  # 1/16th note
+                    note_type = "16th"
+                else:  # Shorter values
+                    note_type = "32nd"
+                
+                type_elem = ET.SubElement(note_elem, "type")
+                type_elem.text = note_type
+                
+                current_position += note_duration
+            
+            # Create XML tree and write to file
+            tree = ET.ElementTree(score_partwise)
+            tree.write(output_path, encoding="utf-8", xml_declaration=True)
+            
+            logger.info(f"MusicXML file created successfully: {output_path}")
+            return {"success": True, "message": "MusicXML file created successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error creating MusicXML file: {e}")
+            return {"success": False, "message": f"Error creating MusicXML: {str(e)}"}
+    
+    def create_midi(self, notes: List[Dict[str, Any]], output_path: str, tempo: float = 120.0,
+                   instrument_type: str = 'bass') -> Dict[str, Any]:
+        """Generate a MIDI file from note data.
+        
+        Args:
+            notes: List of note dictionaries with musical information
+            output_path: Path to save the MIDI output
+            tempo: Tempo in BPM
+            instrument_type: Type of instrument (used to select appropriate MIDI program)
+            
+        Returns:
+            Dictionary with operation results
+        """
+        logger.info(f"Generating MIDI file at {output_path}")
+        
+        try:
+            import mido
+            
+            # Create a new MIDI file, format 0 (single track)
+            mid = mido.MidiFile()
+            track = mido.MidiTrack()
+            mid.tracks.append(track)
+            
+            # Set tempo (microseconds per beat)
+            tempo_us = int(60000000 / tempo)  # Convert BPM to microseconds per beat
+            track.append(mido.MetaMessage('set_tempo', tempo=tempo_us, time=0))
+            
+            # Select appropriate MIDI program based on instrument type
+            # MIDI program numbers (0-127, add 1 for human-readable program number)
+            instrument_programs = {
+                'bass': 33,  # Electric Bass (finger)
+                'guitar': 24,  # Acoustic Guitar (nylon)
+                'electric_guitar': 27,  # Electric Guitar (clean)
+                'piano': 0,  # Acoustic Grand Piano
+                'drums': 0,  # Special case, uses channel 9
+                'vocals': 52,  # Choir Aahs
+                'default': 0  # Acoustic Grand Piano
+            }
+            
+            # Get program number, default to 0 if not found
+            program = instrument_programs.get(instrument_type.lower(), instrument_programs['default'])
+            
+            # Select MIDI channel (drums use channel 9)
+            channel = 9 if instrument_type.lower() == 'drums' else 0
+            
+            # Set program (instrument)
+            track.append(mido.Message('program_change', program=program, channel=channel, time=0))
+            
+            # Get MIDI ticks per beat - default is 480 in mido
+            ticks_per_beat = mid.ticks_per_beat
+            
+            # Add notes
+            current_time = 0
+            for note_data in notes:
+                # Get note properties
+                midi_note = note_data.get("midi", 60)  # Middle C if not specified
+                
+                # Calculate note duration in ticks
+                # quarter_length is in quarter notes, convert to ticks
+                quarter_length = note_data.get("quarter_length", 1.0)
+                duration_ticks = int(quarter_length * ticks_per_beat)
+                
+                # Calculate delta time (time since last message)
+                delta_time = 0  # Notes start at the same time as previous events
+                
+                # Note on message
+                velocity = note_data.get("velocity", 64)  # Default medium velocity
+                track.append(mido.Message('note_on', note=midi_note, velocity=velocity, channel=channel, time=delta_time))
+                
+                # Note off message (delta time is the duration)
+                track.append(mido.Message('note_off', note=midi_note, velocity=0, channel=channel, time=duration_ticks))
+                
+                current_time += duration_ticks
+            
+            # Save MIDI file
+            mid.save(output_path)
+            
+            logger.info(f"MIDI file created successfully: {output_path}")
+            return {"success": True, "message": "MIDI file created successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error creating MIDI file: {e}")
+            return {"success": False, "message": f"Error creating MIDI: {str(e)}"}
+    
+    def create_pdf_score(self, musicxml_path: str, output_path: str) -> Dict[str, Any]:
+        """Generate a PDF score from a MusicXML file.
+        
+        Args:
+            musicxml_path: Path to the MusicXML file
+            output_path: Path to save the PDF output
+            
+        Returns:
+            Dictionary with operation results
+        """
+        logger.info(f"Generating PDF score from MusicXML: {musicxml_path}")
+        
+        try:
+            # Use music21 to convert MusicXML to PDF
+            import music21 as m21
+            
+            # Load the MusicXML file
+            score = m21.converter.parse(musicxml_path)
+            
+            # Use music21's write method to create PDF
+            # Note: This requires MuseScore, Lilypond, or other music engraving software
+            # to be installed on the system
+            try:
+                # Try to use MuseScore (more reliable)
+                score.write('musicxml.pdf', fp=output_path, subformats=['musicxml'])
+            except:
+                # Fall back to default PDF writer (might be Lilypond)
+                score.write('lily.pdf', fp=output_path)
+            
+            logger.info(f"PDF score created successfully: {output_path}")
+            return {"success": True, "message": "PDF score created successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error creating PDF score: {e}")
+            return {"success": False, "message": f"Error creating PDF score: {str(e)}"}
+    
+    def create_tablature(self, notes: List[Dict[str, Any]], output_path: str, instrument_type: str = 'guitar') -> Dict[str, Any]:
+        """Generate tablature PDF for string instruments.
+        
+        Args:
+            notes: List of note dictionaries with string/fret information
+            output_path: Path to save the tablature PDF
+            instrument_type: String instrument type (guitar, bass, ukulele)
+            
+        Returns:
+            Dictionary with operation results
+        """
+        logger.info(f"Generating tablature for {instrument_type} at {output_path}")
+        
+        try:
+            # Create a temporary JSON representation of the tablature
+            import tempfile
+            import json
+            
+            # Define tuning based on instrument type
+            tunings = {
+                'guitar': ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
+                'bass': ['E1', 'A1', 'D2', 'G2'],
+                'ukulele': ['G4', 'C4', 'E4', 'A4']
+            }
+            
+            tuning = tunings.get(instrument_type.lower(), tunings['guitar'])
+            string_count = len(tuning)
+            
+            # Filter notes to only include those with string and fret information
+            valid_notes = [note for note in notes if "string" in note and "fret" in note]
+            
+            # Create tab data structure
+            tab_data = {
+                'instrument': instrument_type,
+                'tuning': tuning,
+                'string_count': string_count,
+                'notes': [
+                    {
+                        'start_time': note.get("onset", 0),
+                        'duration': note.get("duration", 0),
+                        'string': note.get("string"),
+                        'fret': note.get("fret"),
+                        'note_name': note.get("note", ""),
+                        'technique': 'normal'  # Default technique
+                    }
+                    for note in valid_notes
+                ]
+            }
+            
+            # Create temporary JSON file
+            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as tmp:
+                tmp_path = tmp.name
+                json.dump(tab_data, tmp)
+            
+            # Generate PDF from the temp JSON file
+            self.generate_pdf(tmp_path, output_path)
+            
+            # Clean up temporary file
+            os.remove(tmp_path)
+            
+            logger.info(f"Tablature created successfully: {output_path}")
+            return {"success": True, "message": "Tablature created successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error creating tablature: {e}")
+            return {"success": False, "message": f"Error creating tablature: {str(e)}"}
+
     
     def generate_pdf(self, tab_json_path: str, output_path: str) -> str:
         """Generate a PDF representation of the tablature.

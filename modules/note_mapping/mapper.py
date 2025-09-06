@@ -36,35 +36,47 @@ class TuningPreset(Enum):
 class NoteMapper:
     """Maps audio features to musical notation and tablature."""
     
-    def __init__(self, instrument: StringInstrument = StringInstrument.GUITAR, 
+    def __init__(self, instrument_type: str = "bass", 
                  tuning: Optional[List[str]] = None):
         """Initialize the note mapper.
         
         Args:
-            instrument: The string instrument type
+            instrument_type: The instrument type (bass, guitar, piano, drums, etc.)
             tuning: Custom tuning as a list of string pitches (high to low)
                    If None, uses the standard tuning for the instrument
         """
-        self.instrument = instrument
+        # Map instrument_type string to StringInstrument enum if applicable
+        if instrument_type.lower() in [e.value for e in StringInstrument]:
+            self.instrument = StringInstrument(instrument_type.lower())
+        else:
+            # Default to bass for non-string instruments (we'll handle them differently)
+            self.instrument = StringInstrument.BASS
+            
+        self.instrument_type = instrument_type.lower()
         
         # Set default tuning based on instrument if not specified
         if tuning is None:
-            if instrument == StringInstrument.GUITAR:
+            if self.instrument == StringInstrument.GUITAR:
                 self.tuning = TuningPreset.GUITAR_STANDARD.value
-            elif instrument == StringInstrument.BASS:
+            elif self.instrument == StringInstrument.BASS:
                 self.tuning = TuningPreset.BASS_STANDARD.value
-            elif instrument == StringInstrument.UKULELE:
+            elif self.instrument == StringInstrument.UKULELE:
                 self.tuning = TuningPreset.UKULELE_STANDARD.value
+            else:
+                # Default tuning for non-string instruments (not actually used)
+                self.tuning = []
         else:
             self.tuning = tuning
         
-        # Convert tuning strings to music21 pitches
-        self.tuning_pitches = [m21.pitch.Pitch(note) for note in self.tuning]
+        # Convert tuning strings to music21 pitches if we have a string instrument
+        if self.tuning:
+            self.tuning_pitches = [m21.pitch.Pitch(note) for note in self.tuning]
+            self.string_count = len(self.tuning)
+        else:
+            self.tuning_pitches = []
+            self.string_count = 0
         
-        # Number of strings
-        self.string_count = len(self.tuning)
-        
-        logger.info(f"Initialized {instrument.value} mapper with tuning: {self.tuning}")
+        logger.info(f"Initialized {instrument_type} mapper")
     
     def frequency_to_pitch(self, frequency: float) -> m21.pitch.Pitch:
         """Convert a frequency in Hz to a music21 pitch object.
@@ -169,6 +181,102 @@ class NoteMapper:
         best_position = min(positions, key=position_score)
         return best_position
     
+    def map_frequencies_to_notes(self, onset_times: np.ndarray, time: np.ndarray, frequency: np.ndarray, confidence: np.ndarray, tempo: float = 120.0, key: str = 'C', is_polyphonic: bool = False) -> Dict[str, Any]:
+        """Map frequency data to musical notes.
+        
+        Args:
+            onset_times: Array of note onset times in seconds
+            time: Array of time points from pitch detection
+            frequency: Array of frequency values in Hz
+            confidence: Array of confidence values for each frequency
+            tempo: Estimated tempo in BPM
+            key: Estimated musical key
+            is_polyphonic: Whether the audio is polyphonic (contains chords)
+            
+        Returns:
+            Dictionary with note mapping results
+        """
+        logger.info(f"Mapping frequencies to notes for {self.instrument_type}")
+        
+        # Filter out low-confidence pitch estimates
+        confidence_threshold = 0.8  # Only keep confident pitch estimates
+        valid_indices = confidence > confidence_threshold
+        filtered_time = time[valid_indices]
+        filtered_frequency = frequency[valid_indices]
+        
+        # Initialize note data
+        notes = []
+        
+        # Process each onset
+        for i, onset in enumerate(onset_times):
+            # Determine note end time (next onset or end of audio)
+            if i < len(onset_times) - 1:
+                end_time = onset_times[i + 1]
+            else:
+                end_time = filtered_time[-1] if len(filtered_time) > 0 else onset + 0.5  # Default to 0.5s note
+            
+            # Duration in seconds
+            duration = end_time - onset
+            
+            # Find all pitch estimates within this note's timespan
+            note_indices = (filtered_time >= onset) & (filtered_time < end_time)
+            note_frequencies = filtered_frequency[note_indices]
+            
+            if len(note_frequencies) == 0:
+                # Skip if no valid frequencies for this note
+                continue
+            
+            # Calculate median frequency for this note
+            median_freq = np.median(note_frequencies)
+            
+            # Convert frequency to pitch
+            pitch_obj = self.frequency_to_pitch(median_freq)
+            if pitch_obj is None:
+                # Skip silent frames
+                continue
+            
+            # Calculate note properties
+            midi_note = pitch_obj.midi
+            note_name = pitch_obj.nameWithOctave
+            
+            # For string instruments, find string and fret
+            if self.instrument_type in [e.value for e in StringInstrument]:
+                string_idx, fret = self.pitch_to_string_fret(pitch_obj)
+            else:
+                string_idx, fret = -1, -1  # Not applicable
+            
+            # Calculate note duration in quarter notes based on tempo
+            quarters_per_second = tempo / 60.0
+            quarter_length = duration * quarters_per_second
+            
+            # Add the note to our results
+            note_data = {
+                "onset": float(onset),
+                "duration": float(duration),
+                "frequency": float(median_freq),
+                "midi": int(midi_note),
+                "note": note_name,
+                "quarter_length": float(quarter_length)
+            }
+            
+            # Add string instrument specific data if applicable
+            if string_idx >= 0:
+                note_data["string"] = int(string_idx)
+                note_data["fret"] = int(fret)
+            
+            notes.append(note_data)
+        
+        # Organize results
+        results = {
+            "notes": notes,
+            "tempo": float(tempo),
+            "key": key,
+            "is_polyphonic": bool(is_polyphonic),
+            "instrument": self.instrument_type
+        }
+        
+        return results
+
     def create_score(self, features: Dict[str, Any], tempo: Optional[float] = None) -> m21.stream.Score:
         """Create a music21 score from the extracted features.
         
